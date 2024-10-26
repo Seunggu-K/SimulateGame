@@ -1,0 +1,9 @@
+version: "3"
+services:
+  python:
+    build: . # Dockerfile이 위치한 경로
+    volumes:
+      - ./app:/usr/src/app # 현재 디렉토리의 app 폴더를 컨테이너 내부의 /usr/src/app에 마운트
+    ports:
+      - "8080:8080" # 포트 매핑
+    command: tail -f /dev/null # 컨테이너가 종료되지 않도록 설정
