@@ -1,5 +1,5 @@
 # SimulateGame
-mesa를 사용한 워게임 간단 구현
+mesa를 사용한 시뮬레이션 간단 구현
 
 ![image](https://github.com/user-attachments/assets/8f5e95a8-1407-4b52-88d7-d435d687275b)
 
