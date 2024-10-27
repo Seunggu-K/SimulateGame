@@ -4,13 +4,16 @@ from mesa.space import MultiGrid
 import random
 import pandas as pd
 from datetime import datetime
+import sqlite3
+import pytz
 
 class Unit(Agent):
     def __init__(self, unique_id, faction, number, model):
         super().__init__(unique_id, model)
-        self.faction = faction
-        self.number = number
+        self.faction = faction # 진영 구분을 위한 변수
+        self.number = number # 해당 부대의 인원 수
 
+    # 해당 부대가 행동할 때마다 실행되는 함수
     def step(self):
         if self.pos is None:
             # x = self.random.randrange(self.model.grid.width)
@@ -47,7 +50,8 @@ class Unit(Agent):
                     }])
                     self.model.df_result = pd.concat([self.model.df_result, new_row], ignore_index=True)
                     self.model.grid.remove_agent(self)
-                    self.model.schedule.remove(self)
+                    if self in self.model.schedule._agents:
+                        self.model.schedule.remove(self)
                 
                 if agent.number == 0:
                     # 행동 결과를 DataFrame에 추가
@@ -65,13 +69,16 @@ class Unit(Agent):
                     }])
                     self.model.df_result = pd.concat([self.model.df_result, new_row], ignore_index=True)
                     self.model.grid.remove_agent(agent)
-                    self.model.schedule.remove(agent)
+                    if agent in self.model.schedule._agents:
+                        self.model.schedule.remove(agent)
 
             elif agent != self and agent.faction == self.faction:
                 self.merge(agent)
                 self.model.grid.remove_agent(agent)
-                self.model.schedule.remove(agent)
+                if agent in self.model.schedule._agents:
+                    self.model.schedule.remove(agent)
     
+    # 해당 부대가 이동했을 때, 이동한 위치에 다른 진영의 부대가 있으면 실행되는 함수
     def battle(self, agent):
         # player1_difference = self.number - agent.number
         # player2_difference = agent.number - self.number
@@ -109,7 +116,7 @@ class Unit(Agent):
         }])
         self.model.df_result = pd.concat([self.model.df_result, new_row], ignore_index=True)
 
-
+    # 해당 부대가 이동했을 때, 이동한 위치에 같은 진영의 부대가 있으면 실행되는 함수
     def merge(self, agent):
         self.number += agent.number
 
@@ -139,6 +146,7 @@ class Unit(Agent):
         }])
         self.model.df_result = pd.concat([self.model.df_result, new_row], ignore_index=True)
 
+    # 해당 부대의 위치를 변경하는 함수
     def move(self):
         current_position = self.pos
         possible_steps = self.model.grid.get_neighborhood(self.pos, moore=True, include_center=False)
@@ -160,7 +168,6 @@ class Unit(Agent):
         }])
         self.model.df_result = pd.concat([self.model.df_result, new_row], ignore_index=True)
 
-
 class Board(Model):
     def __init__(self, width, height, num_my_units, num_enemy_units):
         self.grid = MultiGrid(width, height, True)
@@ -168,6 +175,7 @@ class Board(Model):
         self.num_my_units = num_my_units
         self.num_enemy_units = num_enemy_units
         self.chapter = 0
+        self.running = True
 
         self.df_result = pd.DataFrame(columns=['chapter','active_agent_id','active_agent_faction','target_agent_id','target_agent_faction','action_type','active_agent_number','target_agent_number','active_agent_position_before','active_agent_position_after'])
 
@@ -191,27 +199,42 @@ class Board(Model):
                     
             self.grid.place_agent(unit, (x, y))
 
-        # for i in range(self.num_my_units):
-        #     unit = Unit(i, 0, 50, self)
-        #     self.schedule.add(unit)
-        #     x = self.random.randrange(self.grid.width)
-        #     y = self.random.randrange(self.grid.height)
-        #     self.grid.place_agent(unit, (x, y))
-
-        # for i in range(self.num_my_units, self.num_enemy_units):
-        #     unit = Unit(i, 1, 50, self)
-        #     self.schedule.add(unit)
-        #     x = self.random.randrange(self.grid.width)
-        #     y = self.random.randrange(self.grid.height)
-        #     self.grid.place_agent(unit, (x, y))
-
     def step(self):
-        self.schedule.step()
+        # 조건을 확인하고, 만족하면 모델 중단
+        if self.chapter != 0 and len(set(agent.faction for agent in self.schedule._agents)) == 1:
+            self.running = False
+            print("Stopping model as condition is met.")
 
+        # 스케줄 실행 (조건 충족 시 실행되지 않음)
+        if self.running:
+            self.schedule.step()
 
-model = Board(10, 10, 5, 5)
-for i in range(10):
-    model.step()
-    model.chapter = i
+board_width = 1
+board_height = 1
+my_unit_count = 1
+enemy_unit_count = 1
 
-model.df_result.to_csv(f"./log/{datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.csv", index=False)
+model = Board(board_width, board_height, my_unit_count, enemy_unit_count)
+for i in range(20):
+    if model.running:
+        model.step()
+        model.chapter = i
+
+# model.df_result.to_csv(f"./log/{datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.csv", index=False)
+
+kst = pytz.timezone('Asia/Seoul')
+model.df_result['created_date'] = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
+model.df_result['active_agent_position_before_X'] = model.df_result['active_agent_position_before'].apply(lambda pos: pos[0] if isinstance(pos, tuple) else None)
+model.df_result['active_agent_position_before_Y'] = model.df_result['active_agent_position_before'].apply(lambda pos: pos[1] if isinstance(pos, tuple) else None)
+model.df_result['active_agent_position_after_X'] = model.df_result['active_agent_position_after'].apply(lambda pos: pos[0] if isinstance(pos, tuple) else None)
+model.df_result['active_agent_position_after_Y'] = model.df_result['active_agent_position_after'].apply(lambda pos: pos[1] if isinstance(pos, tuple) else None)
+model.df_result.drop(columns=['active_agent_position_before', 'active_agent_position_after'], inplace=True)
+model.df_result['board_width'] = board_width
+model.df_result['board_height'] = board_height
+model.df_result['my_unit_count'] = my_unit_count
+model.df_result['enemy_unit_count'] = enemy_unit_count
+
+conn = sqlite3.connect('./db/board.db')
+model.df_result.to_sql('board', conn, if_exists='append', index=False)
+conn.commit()  # 변경 사항을 커밋
+conn.close()   # 연결을 닫음
